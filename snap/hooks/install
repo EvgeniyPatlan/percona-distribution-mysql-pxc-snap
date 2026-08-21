@@ -68,12 +68,19 @@ enable_auth_socket() {
 }
 
 init_distribution() {
-    # ProxySQL: writable datadir + seeded config
+    # ProxySQL: writable datadir + seeded config.
+    # IMPORTANT: the config must NOT live directly in $SNAP_DATA/etc: my.cnf's
+    # "!includedir $SNAP_DATA/etc" makes mysqld parse every *.cnf file in that
+    # directory as its own ini-style config, and ProxySQL's brace-block format
+    # has no [group] headers, so mysqld fails with "Found option without
+    # preceding group" and refuses to start. Seed it into its own
+    # subdirectory instead (mirrors the existing haproxy/ isolation below).
     mkdir $SNAP_COMMON/proxysql
     chown snap_daemon:root $SNAP_COMMON/proxysql
     chmod 770 $SNAP_COMMON/proxysql
-    if [ ! -f "$SNAP_DATA/etc/proxysql.cnf" ]; then
-        cp $SNAP/etc/proxysql.cnf $SNAP_DATA/etc/proxysql.cnf
+    mkdir $SNAP_DATA/etc/proxysql
+    if [ ! -f "$SNAP_DATA/etc/proxysql/proxysql.cnf" ]; then
+        cp $SNAP/etc/proxysql.cnf $SNAP_DATA/etc/proxysql/proxysql.cnf
     fi
 
     # HAProxy: seeded config in the writable data dir

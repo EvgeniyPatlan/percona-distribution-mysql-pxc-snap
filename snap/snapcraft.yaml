@@ -28,7 +28,7 @@ description: |
     .proxysql — ProxySQL; admin interface :6032 on ALL interfaces (default
       credentials admin:admin — CHANGE BOTH BEFORE STARTING on a routable
       host), proxy interface :6033; config seeded at
-      /var/snap/percona-distribution-mysql-pxc/current/etc/proxysql.cnf.
+      /var/snap/percona-distribution-mysql-pxc/current/etc/proxysql/proxysql.cnf.
       The proxysql-admin tool needs --proxysql-username/--proxysql-password
       (or a proxysql-admin.cnf passed via --config-file) and proxysql-status
       needs --login-file or a ~/.my.cnf; no default config is shipped.
