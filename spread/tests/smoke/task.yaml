@@ -30,7 +30,7 @@ execute: |
   percona-distribution-mysql-pxc.proxysql-admin --help &>/dev/null || true
 
   echo "Ensure Percona Toolkit tools are present"
-  percona-distribution-mysql-pxc.pt-summary --help &>/dev/null
+  percona-distribution-mysql-pxc.pt-summary --help 2>&1 | grep -q "Usage:"
   percona-distribution-mysql-pxc.pt-query-digest --version &>/dev/null
 
   echo "Ensure telemetry is not active"
