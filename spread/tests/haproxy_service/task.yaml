@@ -1,0 +1,50 @@
+summary: HAProxy routes MySQL traffic and health-checks via clustercheck
+
+prepare: |
+  snap install --dangerous "$CRAFT_ARTIFACT"
+  apt-get install -y socat
+  for _ in $(seq 60); do
+    test -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock && break
+    sleep 2
+  done
+
+execute: |
+  SNAPNAME=percona-distribution-mysql-pxc
+  # TCP user for the proxied connection (auth_socket only works locally).
+  "$SNAPNAME.mysql" -u root -e "CREATE USER 'hap'@'127.0.0.1' IDENTIFIED BY 'HapTest123!'; GRANT SELECT ON *.* TO 'hap'@'127.0.0.1';"
+  # clustercheck behind an HTTP listener on :9200
+  socat TCP-LISTEN:9200,fork,reuseaddr EXEC:"$SNAPNAME.clustercheck" &
+  CLUSTERCHECK_PID=$!
+  # Live HAProxy config: frontend :13306 -> local mysqld, health via :9200
+  cat > /var/snap/$SNAPNAME/current/etc/haproxy/haproxy.cfg <<'EOF'
+  global
+      maxconn 256
+      stats socket /var/snap/percona-distribution-mysql-pxc/current/run/haproxy.sock mode 660 level admin
+  defaults
+      mode tcp
+      timeout connect 10s
+      timeout client 1m
+      timeout server 1m
+  frontend pxc-front
+      bind 127.0.0.1:13306
+      default_backend pxc-back
+  backend pxc-back
+      option httpchk GET /
+      server node1 127.0.0.1:3306 check port 9200 inter 2s rise 2 fall 2
+  EOF
+  snap start "$SNAPNAME.haproxy"
+  # Round-trip through the proxy once the health check marks the node UP
+  ok=0
+  for _ in $(seq 30); do
+    if "$SNAPNAME.mysql" -h 127.0.0.1 -P 13306 -u hap -pHapTest123! -e "SELECT 1" 2>/dev/null | grep -q 1; then
+      ok=1; break
+    fi
+    sleep 2
+  done
+  [ "$ok" = 1 ]
+  # Backend reported UP on the stats socket
+  echo "show stat" | socat stdio unix-connect:/var/snap/$SNAPNAME/current/run/haproxy.sock | grep pxc-back | grep -q UP
+  kill "$CLUSTERCHECK_PID" || true
+
+restore: |
+  snap remove percona-distribution-mysql-pxc --purge --terminate || true

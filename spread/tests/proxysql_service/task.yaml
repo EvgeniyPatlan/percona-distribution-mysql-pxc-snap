@@ -1,0 +1,40 @@
+summary: Percona Distribution ProxySQL service tests
+
+prepare: |
+  snap install "${SPREAD_PATH}/$(basename "${CRAFT_ARTIFACT}")" --dangerous --jailmode
+  until [ -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock ]; do
+    echo "Waiting for mysqld.sock"
+    sleep 1
+  done
+
+execute: |
+  CMD="percona-distribution-mysql-pxc.mysql -u root"
+  ACMD="percona-distribution-mysql-pxc.mysql -h 127.0.0.1 -P 6032 -uadmin -padmin --protocol=TCP"
+  PCMD="percona-distribution-mysql-pxc.mysql -h 127.0.0.1 -P 6033 -uproxytest -pproxypass --protocol=TCP"
+
+  echo "Starting ProxySQL"
+  snap start percona-distribution-mysql-pxc.proxysql
+  for i in $(seq 30); do
+    if ${ACMD} -e "SELECT 1;" &>/dev/null; then break; fi
+    sleep 2
+  done
+  ${ACMD} -e "SELECT 1;"
+
+  echo "Wiring the local server as a backend"
+  ${CMD} -e "CREATE USER 'proxytest'@'%' IDENTIFIED WITH caching_sha2_password BY 'proxypass';"
+  ${CMD} -e "GRANT ALL ON *.* TO 'proxytest'@'%';"
+  ${ACMD} -e "INSERT INTO mysql_servers (hostgroup_id, hostname, port) VALUES (0, '127.0.0.1', 3306);"
+  ${ACMD} -e "INSERT INTO mysql_users (username, password, default_hostgroup) VALUES ('proxytest', 'proxypass', 0);"
+  ${ACMD} -e "LOAD MYSQL SERVERS TO RUNTIME; LOAD MYSQL USERS TO RUNTIME;"
+
+  echo "Querying through the proxy"
+  for i in $(seq 15); do
+    if ${PCMD} -e "SELECT 1;" &>/dev/null; then break; fi
+    sleep 2
+  done
+  ${PCMD} -e "SELECT @@version;" | grep -q "8.4"
+
+  snap stop percona-distribution-mysql-pxc.proxysql
+
+restore: |
+  snap remove percona-distribution-mysql-pxc --purge --terminate
