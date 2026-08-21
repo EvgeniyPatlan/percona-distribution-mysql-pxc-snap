@@ -1,0 +1,60 @@
+summary: Percona XtraDB Cluster snap smoke tests
+
+prepare: |
+  snap install "${SPREAD_PATH}/$(basename "${CRAFT_ARTIFACT}")" --dangerous --jailmode
+  until [ -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock ]; do
+    echo "Waiting for mysqld.sock"
+    sleep 1
+  done
+
+execute: |
+  echo "Percona Server snap smoke tests"
+
+  SNAP_VERSION=$(awk -F\' '/^version/{print $2}' "${SPREAD_PATH}"/snap/snapcraft.yaml)
+  percona-distribution-mysql-pxc.mysql --user=root --execute="select @@version;" -E | \
+    grep "^@@version: ${SNAP_VERSION:-error}"
+
+  echo "Ensure all tools are present"
+  for tool in mysqldump mysqlimport mysqlshow mysqlslap mysqlcheck; do
+    echo "Test ${tool}"
+    percona-distribution-mysql-pxc.${tool} --help &>/dev/null
+  done
+
+  echo "Ensure backup/cluster tools are present"
+  percona-distribution-mysql-pxc.xtrabackup --version &>/dev/null
+  percona-distribution-mysql-pxc.xbstream --version &>/dev/null
+  percona-distribution-mysql-pxc.xbcloud --version &>/dev/null
+  percona-distribution-mysql-pxc.xbcrypt --version &>/dev/null
+  percona-distribution-mysql-pxc.qpress --help &>/dev/null || true
+  percona-distribution-mysql-pxc.halog --help &>/dev/null || true
+  percona-distribution-mysql-pxc.proxysql-admin --help &>/dev/null || true
+
+  echo "Ensure Percona Toolkit tools are present"
+  percona-distribution-mysql-pxc.pt-summary --help &>/dev/null
+  percona-distribution-mysql-pxc.pt-query-digest --version &>/dev/null
+
+  echo "Ensure telemetry is not active"
+  # variable must be absent (component not loaded) or ON (disabled); never OFF
+  if percona-distribution-mysql-pxc.mysql --user=root \
+      --execute="SHOW VARIABLES LIKE 'percona_telemetry_disable';" | grep -iq OFF; then
+    echo "Telemetry is enabled but must be disabled"
+    exit 1
+  fi
+  test ! -e /snap/percona-distribution-mysql-pxc/current/usr/bin/percona-telemetry-agent
+
+  echo "Ensure Galera is ready"
+  percona-distribution-mysql-pxc.mysql -u root --execute="SHOW STATUS LIKE 'wsrep_ready';" | grep -q ON
+
+  echo "Ensure SST plumbing is shipped"
+  test -x /snap/percona-distribution-mysql-pxc/current/usr/bin/pxc_extra/pxb-8.4/bin/xtrabackup
+  test -x /snap/percona-distribution-mysql-pxc/current/usr/bin/wsrep_sst_xtrabackup-v2
+
+  echo "Test TCP connection (exercises server-side NSS resolution)"
+  percona-distribution-mysql-pxc.mysql -u root -h 127.0.0.1 --protocol=TCP --execute="SELECT 1;"
+
+  echo "Test mysqladmin"
+  # mysqladmin returns 1 when called with `--help`, 127 if not found
+  percona-distribution-mysql-pxc.mysqladmin --help &>/dev/null || [ $? -eq 1 ] && exit 0 || exit 127
+
+restore: |
+  snap remove percona-distribution-mysql-pxc --purge --terminate

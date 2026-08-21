@@ -1,0 +1,35 @@
+summary: Percona XtraDB Cluster mysqld service tests
+
+prepare: |
+  snap install "${SPREAD_PATH}/$(basename "${CRAFT_ARTIFACT}")" --dangerous --jailmode
+  until [ -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock ]; do
+    echo "Waiting for mysqld.sock"
+    sleep 1
+  done
+
+execute: |
+  echo "Testing service control"
+  CMD="percona-distribution-mysql-pxc.mysql -u root"
+
+  echo "Stopping percona-distribution-mysql-pxc.mysqld"
+  snap stop percona-distribution-mysql-pxc.mysqld
+  until [ ! -e /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock ]; do
+    echo "Waiting for mysqld.sock to be removed"
+    sleep 1
+  done
+
+  ${CMD} -e "SELECT 1;" &>/dev/null || :
+  snap services percona-distribution-mysql-pxc.mysqld | grep -q inactive
+
+  echo "Starting percona-distribution-mysql-pxc.mysqld"
+  snap start percona-distribution-mysql-pxc.mysqld
+  until [ -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock ]; do
+    echo "Waiting for mysqld.sock to be created"
+    sleep 1
+  done
+
+  ${CMD} -e "SELECT 1;" &>/dev/null
+  snap services percona-distribution-mysql-pxc.mysqld | grep -q " active"
+
+restore: |
+  snap remove percona-distribution-mysql-pxc --purge --terminate

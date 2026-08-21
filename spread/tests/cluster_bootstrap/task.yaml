@@ -1,0 +1,38 @@
+summary: PXC single-node cluster bootstrap tests
+
+prepare: |
+  snap install "${SPREAD_PATH}/$(basename "${CRAFT_ARTIFACT}")" --dangerous --jailmode
+  until [ -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock ]; do
+    echo "Waiting for mysqld.sock"
+    sleep 1
+  done
+
+execute: |
+  echo "Checking Galera bootstrap status"
+  CMD="percona-distribution-mysql-pxc.mysql -u root"
+
+  ${CMD} -e "SHOW STATUS LIKE 'wsrep_cluster_size';"   | grep -q "wsrep_cluster_size.*1"
+  ${CMD} -e "SHOW STATUS LIKE 'wsrep_cluster_status';" | grep -q Primary
+  ${CMD} -e "SHOW STATUS LIKE 'wsrep_local_state_comment';" | grep -q Synced
+
+  echo "Writing data into the cluster"
+  ${CMD} -e "CREATE DATABASE galera_db;"
+  ${CMD} -e "CREATE TABLE galera_db.t (id INT PRIMARY KEY, v VARCHAR(50));"
+  ${CMD} -e "INSERT INTO galera_db.t VALUES (1, 'bootstrap_ok');"
+
+  echo "Restarting; node must re-bootstrap with data intact"
+  snap restart percona-distribution-mysql-pxc.mysqld
+  until ${CMD} -e "SELECT 1;" &>/dev/null; do
+    echo "Waiting for mysql to be available..."
+    sleep 1
+  done
+
+  ${CMD} -e "SHOW STATUS LIKE 'wsrep_cluster_size';" | grep -q "wsrep_cluster_size.*1"
+  ${CMD} -e "SELECT v FROM galera_db.t WHERE id = 1;" | grep -q bootstrap_ok
+  ${CMD} -e "DROP DATABASE galera_db;"
+
+  echo "Checking clustercheck health probe"
+  percona-distribution-mysql-pxc.clustercheck | grep -q "200 OK"
+
+restore: |
+  snap remove percona-distribution-mysql-pxc --purge --terminate

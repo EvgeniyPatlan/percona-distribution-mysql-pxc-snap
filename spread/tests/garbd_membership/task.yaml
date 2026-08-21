@@ -1,0 +1,45 @@
+summary: PXC garbd (Galera Arbitrator) membership tests
+
+prepare: |
+  snap install "${SPREAD_PATH}/$(basename "${CRAFT_ARTIFACT}")" --dangerous --jailmode
+  until [ -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock ]; do
+    echo "Waiting for mysqld.sock"
+    sleep 1
+  done
+
+execute: |
+  CMD="percona-distribution-mysql-pxc.mysql -u root"
+
+  echo "Disabling cluster traffic encryption for loopback arbitrator test"
+  echo "pxc-encrypt-cluster-traffic = OFF" >> /var/snap/percona-distribution-mysql-pxc/current/etc/mysqld.cnf
+  snap restart percona-distribution-mysql-pxc.mysqld
+  until ${CMD} -e "SELECT 1;" &>/dev/null; do
+    echo "Waiting for mysql to be available..."
+    sleep 1
+  done
+
+  echo "Starting garbd against the local node"
+  snap set percona-distribution-mysql-pxc garbd.address=gcomm://127.0.0.1:4567 garbd.group=pxc-cluster garbd.options="gmcast.listen_addr=tcp://0.0.0.0:4568"
+  snap start percona-distribution-mysql-pxc.garbd
+
+  echo "Waiting for the arbitrator to join"
+  for i in $(seq 30); do
+    if ${CMD} -e "SHOW STATUS LIKE 'wsrep_cluster_size';" | grep -q "wsrep_cluster_size.*2"; then
+      break
+    fi
+    sleep 2
+  done
+  ${CMD} -e "SHOW STATUS LIKE 'wsrep_cluster_size';" | grep -q "wsrep_cluster_size.*2"
+
+  echo "Stopping garbd; cluster shrinks back"
+  snap stop percona-distribution-mysql-pxc.garbd
+  for i in $(seq 30); do
+    if ${CMD} -e "SHOW STATUS LIKE 'wsrep_cluster_size';" | grep -q "wsrep_cluster_size.*1"; then
+      break
+    fi
+    sleep 2
+  done
+  ${CMD} -e "SHOW STATUS LIKE 'wsrep_cluster_size';" | grep -q "wsrep_cluster_size.*1"
+
+restore: |
+  snap remove percona-distribution-mysql-pxc --purge --terminate
