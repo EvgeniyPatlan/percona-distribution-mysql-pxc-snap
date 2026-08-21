@@ -1,0 +1,459 @@
+name: percona-distribution-mysql-pxc
+base: core26
+version: '8.4.10-10'
+summary: Percona Distribution for MySQL (PXC-based) in a snap.
+description: |
+  Percona Distribution for MySQL (PXC variant) combines Percona XtraDB
+  Cluster with the best components from the Percona ecosystem, all tested
+  to work together: Percona XtraBackup for hot physical backups, ProxySQL
+  and HAProxy for load balancing, replication-manager for asynchronous
+  replica failover, and Percona Toolkit's command-line utilities.
+
+  On install the snap initializes the data directory and bootstraps a
+  single-node cluster; connect immediately with:
+    sudo percona-distribution-mysql-pxc.mysql -u root
+  Join more nodes by setting wsrep_cluster_address in
+  /var/snap/percona-distribution-mysql-pxc/current/etc/mysqld.cnf.
+
+  Hot backups work out of the box against this snap's own server:
+    sudo percona-distribution-mysql-pxc.xtrabackup --backup -u root \
+      -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock \
+      --target-dir=/var/snap/percona-distribution-mysql-pxc/common/backup
+
+  Percona Toolkit tools are exposed as individual commands, e.g.:
+    sudo percona-distribution-mysql-pxc.pt-summary
+    percona-distribution-mysql-pxc.pt-query-digest slow.log
+
+  Optional services (disabled by default, start with `snap start`):
+    .proxysql — ProxySQL; admin interface :6032 on ALL interfaces (default
+      credentials admin:admin — CHANGE BOTH BEFORE STARTING on a routable
+      host), proxy interface :6033; config seeded at
+      /var/snap/percona-distribution-mysql-pxc/current/etc/proxysql.cnf.
+      The proxysql-admin tool needs --proxysql-username/--proxysql-password
+      (or a proxysql-admin.cnf passed via --config-file) and proxysql-status
+      needs --login-file or a ~/.my.cnf; no default config is shipped.
+    .haproxy — HAProxy (TCP mode); config seeded at
+      /var/snap/percona-distribution-mysql-pxc/current/etc/haproxy/haproxy.cfg
+      with a commented example PXC backend — configure it before starting;
+      stats socket at /var/snap/percona-distribution-mysql-pxc/current/run/haproxy.sock.
+    .garbd — Galera arbitrator; configure with
+      `snap set percona-distribution-mysql-pxc garbd.address=... garbd.group=...`.
+
+  The Percona telemetry agent is not shipped and server-side telemetry is
+  disabled by default.
+title: Percona Distribution for MySQL (PXC)
+contact: https://github.com/EvgeniyPatlan/percona-distribution-mysql-pxc-snap/issues
+issues: https://github.com/EvgeniyPatlan/percona-distribution-mysql-pxc-snap/issues
+source-code: https://github.com/EvgeniyPatlan/percona-distribution-mysql-pxc-snap
+website: https://www.percona.com/mysql/software/percona-distribution-for-mysql
+
+grade: stable
+confinement: strict
+license: Apache-2.0
+platforms:
+  amd64:
+  arm64:
+
+system-usernames:
+  snap_daemon: shared
+
+package-repositories:
+  - type: apt
+    url: https://repo.percona.com/pdpxc-84-lts/apt
+    suites: [resolute]
+    components: [main]
+    key-id: 4D1BB29D63D98E422B2113B19334A25F8507EFA5
+  - type: apt
+    url: https://repo.percona.com/telemetry/apt
+    suites: [resolute]
+    components: [main]
+    key-id: 4D1BB29D63D98E422B2113B19334A25F8507EFA5
+
+hooks:
+  install:
+    plugs:
+      - network
+      - network-bind
+  configure: {}
+
+slots:
+  mysql-sockets:
+    interface: content
+    content: socket-directory
+    write:
+      - $SNAP_DATA/run
+
+layout:
+  /usr/lib/mysql:
+    symlink: $SNAP/usr/lib/mysql
+  /usr/bin/perl:
+    bind-file: $SNAP/usr/bin/perl
+
+apps:
+  mysqld:
+    command: bin/mysqld.sh
+    daemon: simple
+    stop-timeout: 5m
+    plugs:
+      - network
+      - network-bind
+  mysql:
+    command: usr/bin/mysql -S $SNAP_DATA/run/mysqld.sock
+    plugs:
+      - network
+  mysqladmin:
+    command: usr/bin/mysqladmin -S $SNAP_DATA/run/mysqld.sock
+    plugs:
+      - network
+  mysqlcheck:
+    command: usr/bin/mysqlcheck -S $SNAP_DATA/run/mysqld.sock
+    plugs:
+      - network
+  mysqldump:
+    command: usr/bin/mysqldump -S $SNAP_DATA/run/mysqld.sock
+    plugs:
+      - network
+  mysqlimport:
+    command: usr/bin/mysqlimport -S $SNAP_DATA/run/mysqld.sock
+    plugs:
+      - network
+  mysqlshow:
+    command: usr/bin/mysqlshow -S $SNAP_DATA/run/mysqld.sock
+    plugs:
+      - network
+  mysqlslap:
+    command: usr/bin/mysqlslap -S $SNAP_DATA/run/mysqld.sock
+    plugs:
+      - network
+  clustercheck:
+    command: bin/clustercheck.sh
+    plugs:
+      - network
+  garbd:
+    command: bin/garbd.sh
+    daemon: simple
+    install-mode: disable
+    plugs:
+      - network
+      - network-bind
+  xtrabackup:
+    command: usr/bin/xtrabackup
+    plugs:
+      - network
+  xbstream:
+    command: usr/bin/xbstream
+    plugs:
+      - network
+  xbcloud:
+    command: usr/bin/xbcloud
+    plugs:
+      - network
+  xbcrypt:
+    command: usr/bin/xbcrypt
+    plugs:
+      - network
+  qpress:
+    command: usr/bin/qpress
+    plugs:
+      - network
+  proxysql:
+    command: bin/proxysql.sh
+    daemon: simple
+    install-mode: disable
+    plugs:
+      - network
+      - network-bind
+  proxysql-admin:
+    command: bin/run-proxysql-admin.sh
+    plugs:
+      - network
+  proxysql-status:
+    command: bin/run-proxysql-status.sh
+    plugs:
+      - network
+  haproxy:
+    command: bin/haproxy.sh
+    daemon: simple
+    install-mode: disable
+    plugs:
+      - network
+      - network-bind
+  halog:
+    command: usr/bin/halog
+    plugs:
+      - network
+  replication-manager:
+    command: bin/run-replication-manager.sh
+    plugs:
+      - network
+  pt-align:
+    command: bin/pt-tool.sh pt-align
+    plugs:
+      - network
+  pt-archiver:
+    command: bin/pt-tool.sh pt-archiver
+    plugs:
+      - network
+  pt-config-diff:
+    command: bin/pt-tool.sh pt-config-diff
+    plugs:
+      - network
+  pt-deadlock-logger:
+    command: bin/pt-tool.sh pt-deadlock-logger
+    plugs:
+      - network
+  pt-diskstats:
+    command: bin/pt-tool.sh pt-diskstats
+    plugs:
+      - network
+  pt-duplicate-key-checker:
+    command: bin/pt-tool.sh pt-duplicate-key-checker
+    plugs:
+      - network
+  pt-eustack-resolver:
+    command: bin/pt-tool.sh pt-eustack-resolver
+    plugs:
+      - network
+  pt-fifo-split:
+    command: bin/pt-tool.sh pt-fifo-split
+    plugs:
+      - network
+  pt-find:
+    command: bin/pt-tool.sh pt-find
+    plugs:
+      - network
+  pt-fingerprint:
+    command: bin/pt-tool.sh pt-fingerprint
+    plugs:
+      - network
+  pt-fk-error-logger:
+    command: bin/pt-tool.sh pt-fk-error-logger
+    plugs:
+      - network
+  pt-galera-log-explainer:
+    command: bin/pt-tool.sh pt-galera-log-explainer
+    plugs:
+      - network
+  pt-heartbeat:
+    command: bin/pt-tool.sh pt-heartbeat
+    plugs:
+      - network
+  pt-index-usage:
+    command: bin/pt-tool.sh pt-index-usage
+    plugs:
+      - network
+  pt-ioprofile:
+    command: bin/pt-tool.sh pt-ioprofile
+    plugs:
+      - network
+  pt-k8s-debug-collector:
+    command: bin/pt-tool.sh pt-k8s-debug-collector
+    plugs:
+      - network
+  pt-kill:
+    command: bin/pt-tool.sh pt-kill
+    plugs:
+      - network
+  pt-mext:
+    command: bin/pt-tool.sh pt-mext
+    plugs:
+      - network
+  pt-mongodb-index-check:
+    command: bin/pt-tool.sh pt-mongodb-index-check
+    plugs:
+      - network
+  pt-mongodb-query-digest:
+    command: bin/pt-tool.sh pt-mongodb-query-digest
+    plugs:
+      - network
+  pt-mongodb-summary:
+    command: bin/pt-tool.sh pt-mongodb-summary
+    plugs:
+      - network
+  pt-mysql-summary:
+    command: bin/pt-tool.sh pt-mysql-summary
+    plugs:
+      - network
+  pt-online-schema-change:
+    command: bin/pt-tool.sh pt-online-schema-change
+    plugs:
+      - network
+  pt-pg-summary:
+    command: bin/pt-tool.sh pt-pg-summary
+    plugs:
+      - network
+  pt-pmp:
+    command: bin/pt-tool.sh pt-pmp
+    plugs:
+      - network
+  pt-query-digest:
+    command: bin/pt-tool.sh pt-query-digest
+    plugs:
+      - network
+  pt-replica-find:
+    command: bin/pt-tool.sh pt-replica-find
+    plugs:
+      - network
+  pt-replica-restart:
+    command: bin/pt-tool.sh pt-replica-restart
+    plugs:
+      - network
+  pt-secure-collect:
+    command: bin/pt-tool.sh pt-secure-collect
+    plugs:
+      - network
+  pt-show-grants:
+    command: bin/pt-tool.sh pt-show-grants
+    plugs:
+      - network
+  pt-sift:
+    command: bin/pt-tool.sh pt-sift
+    plugs:
+      - network
+  pt-slave-delay:
+    command: bin/pt-tool.sh pt-slave-delay
+    plugs:
+      - network
+  pt-slave-find:
+    command: bin/pt-tool.sh pt-slave-find
+    plugs:
+      - network
+  pt-slave-restart:
+    command: bin/pt-tool.sh pt-slave-restart
+    plugs:
+      - network
+  pt-stalk:
+    command: bin/pt-tool.sh pt-stalk
+    plugs:
+      - network
+  pt-summary:
+    command: bin/pt-tool.sh pt-summary
+    plugs:
+      - network
+  pt-table-checksum:
+    command: bin/pt-tool.sh pt-table-checksum
+    plugs:
+      - network
+  pt-table-sync:
+    command: bin/pt-tool.sh pt-table-sync
+    plugs:
+      - network
+  pt-table-usage:
+    command: bin/pt-tool.sh pt-table-usage
+    plugs:
+      - network
+  pt-upgrade:
+    command: bin/pt-tool.sh pt-upgrade
+    plugs:
+      - network
+  pt-variable-advisor:
+    command: bin/pt-tool.sh pt-variable-advisor
+    plugs:
+      - network
+  pt-visual-explain:
+    command: bin/pt-tool.sh pt-visual-explain
+    plugs:
+      - network
+
+parts:
+  packages-deb:
+    plugin: nil
+    stage-packages:
+      - percona-xtradb-cluster-server=1:8.4.10-10-1.resolute
+      - percona-xtradb-cluster-client=1:8.4.10-10-1.resolute
+      - percona-xtradb-cluster-common=1:8.4.10-10-1.resolute
+      - percona-xtradb-cluster-garbd=1:8.4.10-10-1.resolute
+      - percona-xtrabackup-84=8.4.0-6-1.resolute
+      - proxysql2=2:2.7.3-1.5.resolute
+      - percona-haproxy=2:2.8.26-1.resolute
+      - percona-replication-manager=2:1.0-1.resolute
+      - percona-toolkit=3.7.1-4.resolute
+      - libdbd-mysql-perl=1:5.013-4.resolute
+      - qpress=11-5.resolute
+      - util-linux
+      - perl
+      - libdbi-perl
+      - libterm-readkey-perl
+      - libio-socket-ssl-perl
+    prime:
+      - -usr/bin/percona-telemetry-agent
+      - -etc/default
+      - -etc/logrotate.d
+      - -etc/rsyslog.d
+      - -usr/lib/tmpfiles.d
+      - -usr/sbin/logrotate
+      - -lib/systemd
+      - -usr/lib/systemd
+      - -etc/init.d
+      - -etc/apparmor.d
+      - -etc/cron.daily
+      - -etc/logcheck
+      - -usr/bin/garb-systemd
+      - -usr/bin/mysql-systemd
+      - -usr/bin/mysqltest
+      - -usr/bin/mysql_client_test
+      - -usr/bin/mysql_keyring_encryption_test
+      - -usr/bin/pyclustercheck
+      - -usr/bin/pxc_extra/*/bin/xtrabackup-debug
+      - -usr/lib/mysql/plugin/debug
+      - -usr/lib/*/libBrokenLocale.so*
+      - -usr/lib/*/libanl.so*
+      - -usr/lib/*/libbrotlienc.so*
+      - -usr/lib/*/libc_malloc_debug.so*
+      - -usr/lib/*/libdl.so*
+      - -usr/lib/*/libdrop_ambient.so*
+      - -usr/lib/*/libmemusage.so*
+      - -usr/lib/*/libmvec.so*
+      - -usr/lib/*/libnsl.so*
+      - -usr/lib/*/libnss_compat.so*
+      - -usr/lib/*/libnss_dns.so*
+      - -usr/lib/*/libnss_files.so*
+      - -usr/lib/*/libnss_hesiod.so*
+      - -usr/lib/*/libpamc.so*
+      - -usr/lib/*/libpcprofile.so*
+      - -usr/lib/*/libpopt.so*
+      - -usr/lib/*/libpthread.so*
+      - -usr/lib/*/librt.so*
+      - -usr/lib/*/libthread_db.so*
+      - -usr/lib/*/libtic.so*
+      - -usr/lib/*/libutil.so*
+      - -usr/lib/*/libformw.so*
+      - -usr/lib/*/libmenuw.so*
+      - -usr/lib/*/libpanelw.so*
+      - -usr/lib/*/libpsx.so*
+    organize:
+      usr/share/doc/percona-xtradb-cluster-server/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-server
+      usr/share/doc/percona-xtradb-cluster-client/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-client
+      usr/share/doc/percona-xtradb-cluster-common/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-common
+      usr/share/doc/percona-xtradb-cluster-garbd/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-garbd
+      usr/share/doc/percona-xtrabackup-84/copyright: licenses/COPYRIGHT-percona-xtrabackup-84
+      usr/share/doc/proxysql2/copyright: licenses/COPYRIGHT-proxysql2
+      usr/share/doc/percona-haproxy/copyright: licenses/COPYRIGHT-percona-haproxy
+      usr/share/doc/percona-replication-manager/copyright: licenses/COPYRIGHT-percona-replication-manager
+      usr/share/doc/percona-toolkit/copyright: licenses/COPYRIGHT-percona-toolkit
+      usr/share/doc/libdbd-mysql-perl/copyright: licenses/COPYRIGHT-libdbd-mysql-perl
+      usr/share/doc/qpress/copyright: licenses/COPYRIGHT-qpress
+      usr/share/doc/perl/copyright: licenses/COPYRIGHT-perl
+      usr/share/doc/libdbi-perl/copyright: licenses/COPYRIGHT-libdbi-perl
+      usr/share/doc/libterm-readkey-perl/copyright: licenses/COPYRIGHT-libterm-readkey-perl
+      usr/share/doc/libio-socket-ssl-perl/copyright: licenses/COPYRIGHT-libio-socket-ssl-perl
+      usr/share/doc/util-linux/copyright: licenses/COPYRIGHT-util-linux
+      etc/proxysql.cnf: usr/share/proxysql2/proxysql.cnf.default
+      etc/haproxy/haproxy.cfg: usr/share/percona-haproxy/haproxy.cfg.default
+  snap-license:
+    plugin: dump
+    source: .
+    source-type: local
+    stage:
+      - licenses/LICENSE-snap
+    organize:
+      LICENSE: licenses/LICENSE-snap
+  snap-scripts:
+    plugin: dump
+    source: snap/local
+    source-type: local
+    override-prime: |
+      craftctl default
+      sed -i 's/_NAME_/$SNAPCRAFT_PROJECT_NAME/g' bin/*.sh
+      sed -i 's/_NAME_/$SNAPCRAFT_PROJECT_NAME/g' etc/*.cnf
+      sed -i 's/_NAME_/$SNAPCRAFT_PROJECT_NAME/g' etc/*.cfg
