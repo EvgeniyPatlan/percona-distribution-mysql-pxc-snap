@@ -89,6 +89,7 @@ init_distribution() {
     if [ ! -f "$SNAP_DATA/etc/haproxy/haproxy.cfg" ]; then
         cp $SNAP/etc/haproxy.cfg $SNAP_DATA/etc/haproxy/haproxy.cfg
     fi
+    chown -R snap_daemon:root "$SNAP_DATA/etc/haproxy"
 }
 
 init_snap_data

@@ -22,7 +22,11 @@ description: |
 
   Percona Toolkit tools are exposed as individual commands, e.g.:
     sudo percona-distribution-mysql-pxc.pt-summary
-    percona-distribution-mysql-pxc.pt-query-digest slow.log
+    sudo percona-distribution-mysql-pxc.pt-query-digest \
+      /var/snap/percona-distribution-mysql-pxc/common/slow.log
+  Input files for the toolkit commands must live under
+  /var/snap/percona-distribution-mysql-pxc/common (the snap cannot read
+  your home directory).
 
   Optional services (disabled by default, start with `snap start`):
     .proxysql — ProxySQL; admin interface :6032 on ALL interfaces (default
@@ -485,7 +489,7 @@ parts:
       usr/share/doc/percona-xtrabackup-84/copyright: licenses/COPYRIGHT-percona-xtrabackup-84
       usr/share/doc/proxysql2/copyright: licenses/COPYRIGHT-proxysql2
       usr/share/doc/percona-haproxy/copyright: licenses/COPYRIGHT-percona-haproxy
-      usr/share/doc/percona-replication-manager/copyright: licenses/COPYRIGHT-percona-replication-manager
+      # percona-replication-manager ships no copyright file in its deb; nothing to relocate.
       usr/share/doc/percona-toolkit/copyright: licenses/COPYRIGHT-percona-toolkit
       usr/share/doc/libdbd-mysql-perl/copyright: licenses/COPYRIGHT-libdbd-mysql-perl
       usr/share/doc/qpress/copyright: licenses/COPYRIGHT-qpress
