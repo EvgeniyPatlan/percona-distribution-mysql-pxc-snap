@@ -428,6 +428,36 @@ parts:
       - -usr/lib/*/libmenuw.so*
       - -usr/lib/*/libpanelw.so*
       - -usr/lib/*/libpsx.so*
+      # Unused-library lint hits from the real percona-distribution-mysql-pxc
+      # build (GMP C++ bindings, GnuTLS dane/openssl compat shims, MIT
+      # Kerberos admin client/server libs, and Lua's C++ binding, all pulled
+      # in transitively via ProxySQL/curl/libcurl-dev's dependency chain;
+      # confirmed via grep -rl across the primed tree that no shipped binary
+      # dlopen-references any of them).
+      - -usr/lib/*/libgmpxx.so*
+      - -usr/lib/*/libgnutls-dane.so*
+      - -usr/lib/*/libgnutls-openssl.so*
+      - -usr/lib/*/libkadm5clnt_mit.so*
+      - -usr/lib/*/libkadm5srv_mit.so*
+      - -usr/lib/*/liblua5.3-c++.so*
+      # These two only become "unused" once the excludes directly above are
+      # applied (libkdb5 was a dependency of the just-excluded libkadm5*_mit
+      # pair; libunbound was pulled in for GnuTLS DANE/TLSA lookups via the
+      # just-excluded libgnutls-dane) — confirmed via the same
+      # zero-dlopen-reference check on a rebuild with the above excludes in
+      # place.
+      - -usr/lib/*/libkdb5.so*
+      - -usr/lib/*/libunbound.so*
+      # rsync is incidental apt-recommends noise (no Depends/Recommends chain
+      # from any of our 10 pinned packages leads to it, and nothing in this
+      # snap invokes it); pruned rather than un-excluding libpopt.so* (a
+      # deliberate, sibling-tested exclusion above) to satisfy the library
+      # linter's missing-dependency finding.
+      - -usr/bin/rsync
+      - -usr/bin/rsync-ssl
+      - -usr/share/doc/rsync
+      - -usr/share/rsync
+      - -usr/share/lintian/overrides/rsync
     organize:
       usr/share/doc/percona-xtradb-cluster-server/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-server
       usr/share/doc/percona-xtradb-cluster-client/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-client
