@@ -1,0 +1,33 @@
+# ProxySQL configuration for the _NAME_ snap.
+# This file seeds ProxySQL's own database on first start; later changes are
+# managed through the admin interface (mysql -h127.0.0.1 -P6032 -uadmin -padmin).
+# CHANGE the default admin credentials before exposing the admin port.
+datadir="/var/snap/_NAME_/common/proxysql"
+errorlog="/var/snap/_NAME_/common/proxysql/proxysql.log"
+
+admin_variables=
+{
+	admin_credentials="admin:admin"
+	mysql_ifaces="0.0.0.0:6032"
+}
+
+mysql_variables=
+{
+	threads=4
+	max_connections=2048
+	default_query_delay=0
+	default_query_timeout=36000000
+	have_compress=true
+	poll_timeout=2000
+	interfaces="0.0.0.0:6033"
+	default_schema="information_schema"
+	stacksize=1048576
+	server_version="8.4.10"
+	connect_timeout_server=3000
+	monitor_username="monitor"
+	monitor_password="monitor"
+	ping_interval_server_msec=120000
+	ping_timeout_server=500
+	commands_stats=true
+	sessions_sort=true
+}
