@@ -1,7 +1,8 @@
 summary: HAProxy routes MySQL traffic and health-checks via clustercheck
 
 prepare: |
-  snap install --dangerous "$CRAFT_ARTIFACT"
+  snap install "${SPREAD_PATH}/$(basename "${CRAFT_ARTIFACT}")" --dangerous --jailmode
+  apt-get update
   apt-get install -y socat
   for _ in $(seq 60); do
     test -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock && break
@@ -47,4 +48,5 @@ execute: |
   kill "$CLUSTERCHECK_PID" || true
 
 restore: |
+  pkill -f "TCP-LISTEN:9200" || true
   snap remove percona-distribution-mysql-pxc --purge --terminate || true

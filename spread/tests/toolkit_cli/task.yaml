@@ -1,7 +1,7 @@
 summary: Percona Toolkit tools run inside the snap (perl and Go paths)
 
 prepare: |
-  snap install --dangerous "$CRAFT_ARTIFACT"
+  snap install "${SPREAD_PATH}/$(basename "${CRAFT_ARTIFACT}")" --dangerous --jailmode
   for _ in $(seq 60); do
     test -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock && break
     sleep 2
@@ -13,18 +13,20 @@ execute: |
   "$SNAPNAME.pt-summary" | grep -q "Percona Toolkit System Summary Report"
   # Perl tool + DBD::mysql + auth_socket over the snap socket
   "$SNAPNAME.pt-show-grants" -S /var/snap/$SNAPNAME/current/run/mysqld.sock -u root | grep -q "Grants for"
-  # Perl tool digesting a synthetic slow log
-  cat > /tmp/slow.log <<'EOF'
+  # Perl tool digesting a synthetic slow log. Strict confinement can't read
+  # /tmp, so the sample lives under the snap's own writable common dir.
+  cat > /var/snap/$SNAPNAME/common/slow.log <<'EOF'
   # Time: 2026-08-21T00:00:01.000000Z
   # User@Host: root[root] @ localhost []
   # Query_time: 1.000000  Lock_time: 0.000000 Rows_sent: 1  Rows_examined: 1
   SET timestamp=1755734401;
   SELECT 1;
   EOF
-  "$SNAPNAME.pt-query-digest" /tmp/slow.log | grep -q "Overall:"
-  # Go tool
-  "$SNAPNAME.pt-galera-log-explainer" --version
+  "$SNAPNAME.pt-query-digest" /var/snap/$SNAPNAME/common/slow.log | grep -q "Overall:"
+  # Go tool: list events from the real error log (path from mysqld.cnf's
+  # log_error setting).
+  "$SNAPNAME.pt-galera-log-explainer" list --all /var/snap/$SNAPNAME/current/log/error.log
 
 restore: |
   snap remove percona-distribution-mysql-pxc --purge --terminate || true
-  rm -f /tmp/slow.log
+  rm -f /var/snap/percona-distribution-mysql-pxc/common/slow.log
