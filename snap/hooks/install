@@ -82,6 +82,7 @@ init_distribution() {
     if [ ! -f "$SNAP_DATA/etc/proxysql/proxysql.cnf" ]; then
         cp $SNAP/etc/proxysql.cnf $SNAP_DATA/etc/proxysql/proxysql.cnf
     fi
+    chown -R snap_daemon:root "$SNAP_DATA/etc/proxysql"
 
     # HAProxy: seeded config in the writable data dir
     mkdir $SNAP_DATA/etc/haproxy

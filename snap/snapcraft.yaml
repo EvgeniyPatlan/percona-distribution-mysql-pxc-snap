@@ -437,16 +437,32 @@ parts:
       - -usr/lib/*/libgmpxx.so*
       - -usr/lib/*/libgnutls-dane.so*
       - -usr/lib/*/libgnutls-openssl.so*
+      # The MIT Kerberos admin libs (libkadm5clnt-mit12, libkadm5srv-mit12,
+      # libkdb5-10t64) are NOT stable across rebuilds of the identical pinned
+      # dependency chain: one real build placed them directly in
+      # usr/lib/<triplet>/, another placed them one level deeper under
+      # usr/lib/<triplet>/mit-krb5/ instead (confirmed empirically — same
+      # snapcraft.yaml pins, two different repo.percona.com/apt fetches,
+      # almost certainly dpkg trigger/update-alternatives ordering variance
+      # for this package's postinst, which snapcraft's stage-packages
+      # extraction doesn't run). A single "*" glob component doesn't cross
+      # "/", so both the flat and nested forms are excluded to be safe
+      # against either outcome.
       - -usr/lib/*/libkadm5clnt_mit.so*
+      - -usr/lib/*/mit-krb5/libkadm5clnt_mit.so*
       - -usr/lib/*/libkadm5srv_mit.so*
+      - -usr/lib/*/mit-krb5/libkadm5srv_mit.so*
       - -usr/lib/*/liblua5.3-c++.so*
       # These two only become "unused" once the excludes directly above are
       # applied (libkdb5 was a dependency of the just-excluded libkadm5*_mit
-      # pair; libunbound was pulled in for GnuTLS DANE/TLSA lookups via the
-      # just-excluded libgnutls-dane) — confirmed via the same
+      # pair, and is subject to the same flat-vs-mit-krb5/-nested placement
+      # variance documented above; libunbound was pulled in for GnuTLS
+      # DANE/TLSA lookups via the just-excluded libgnutls-dane, and lives
+      # directly under usr/lib/<triplet>/) — confirmed via the same
       # zero-dlopen-reference check on a rebuild with the above excludes in
       # place.
       - -usr/lib/*/libkdb5.so*
+      - -usr/lib/*/mit-krb5/libkdb5.so*
       - -usr/lib/*/libunbound.so*
       # rsync is incidental apt-recommends noise (no Depends/Recommends chain
       # from any of our 10 pinned packages leads to it, and nothing in this
@@ -458,6 +474,9 @@ parts:
       - -usr/share/doc/rsync
       - -usr/share/rsync
       - -usr/share/lintian/overrides/rsync
+      - -usr/share/man/man1/rsync.1.gz
+      - -usr/share/man/man1/rsync-ssl.1.gz
+      - -usr/share/man/man5/rsyncd.conf.5.gz
     organize:
       usr/share/doc/percona-xtradb-cluster-server/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-server
       usr/share/doc/percona-xtradb-cluster-client/copyright: licenses/COPYRIGHT-percona-xtradb-cluster-client
