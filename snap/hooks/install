@@ -1,10 +1,19 @@
 #!/bin/bash
 
 init_snap_data() {
-    # Configuration
+    # Configuration. The clustercheck defaults file and ProxySQL's/
+    # HAProxy's $SNAP_DATA/etc subdirs + seeded configs are also seeded
+    # here (moved up from init_distribution) so the ENTIRE $SNAP_DATA/etc
+    # tree is fully populated before the single chown -R below: under
+    # strict confinement, root has no DAC-override/FOWNER, so once a path
+    # is chowned away from root, root can no longer create new entries
+    # under it or touch it again. CI logs proved this: the old ordering
+    # chowned $SNAP_DATA/etc here, then the heredoc and
+    # init_distribution's later mkdir/cp calls into that same tree failed
+    # with "Permission denied" / "mkdir: Permission denied" /
+    # "cp: ...: No such file or directory".
     mkdir $SNAP_DATA/etc
     cp $SNAP/etc/mysqld.cnf $SNAP_DATA/etc
-    chown -R snap_daemon:root $SNAP_DATA/etc
 
     # Defaults file for the clustercheck health probe
     cat <<EOF > $SNAP_DATA/etc/clustercheck.cnf
@@ -12,7 +21,26 @@ init_snap_data() {
 user   = root
 socket = $SNAP_DATA/run/mysqld.sock
 EOF
-    chown snap_daemon:root $SNAP_DATA/etc/clustercheck.cnf
+
+    # ProxySQL: seeded config.
+    # IMPORTANT: the config must NOT live directly in $SNAP_DATA/etc: my.cnf's
+    # "!includedir $SNAP_DATA/etc" makes mysqld parse every *.cnf file in that
+    # directory as its own ini-style config, and ProxySQL's brace-block format
+    # has no [group] headers, so mysqld fails with "Found option without
+    # preceding group" and refuses to start. Seed it into its own
+    # subdirectory instead (mirrors the existing haproxy/ isolation below).
+    mkdir $SNAP_DATA/etc/proxysql
+    if [ ! -f "$SNAP_DATA/etc/proxysql/proxysql.cnf" ]; then
+        cp $SNAP/etc/proxysql.cnf $SNAP_DATA/etc/proxysql/proxysql.cnf
+    fi
+
+    # HAProxy: seeded config in the writable data dir
+    mkdir $SNAP_DATA/etc/haproxy
+    if [ ! -f "$SNAP_DATA/etc/haproxy/haproxy.cfg" ]; then
+        cp $SNAP/etc/haproxy.cfg $SNAP_DATA/etc/haproxy/haproxy.cfg
+    fi
+
+    chown -R snap_daemon:root $SNAP_DATA/etc
 
     # Logs
     mkdir $SNAP_DATA/log
@@ -28,7 +56,28 @@ EOF
 }
 
 init_snap_common() {
-    # Create directory for storing data and set permissions
+    # Create directory for storing data and set permissions.
+    #
+    # NOTE on the trailing chmod below: folding its mode into `mkdir -m`
+    # (matching the family recipe) regresses the "was the data dir
+    # initialized?" check a few lines down. That check runs as root
+    # (unlike --initialize, which runs as snap_daemon via setpriv and is
+    # exempt from the confinement restriction). mkdir -m up front would
+    # make group bits 0 immediately after chown, and root only retains
+    # DAC access to this snap_daemon-owned path via its GROUP match
+    # (root:root); with group bits stripped, root can no longer even stat
+    # the file, so the check spuriously reports "not initialized".
+    # Leaving mkdir unmoded here keeps the directory group-readable (root
+    # can still stat) until the chmod below runs; that chmod is root's
+    # SECOND mutating touch on this path (after the chown above) and CI
+    # logs prove it fails ("chmod: Operation not permitted (os error 1)")
+    # under strict confinement — same as everywhere else in this hook. It
+    # has always failed here, silently (no `set -e`, and it wasn't the
+    # script's last command even before this fix), so this preserves the
+    # pre-existing, already-shipped behavior rather than introducing a
+    # new regression; tightening this directory's mode properly needs a
+    # mechanism (e.g. running the check itself via setpriv) out of scope
+    # for this confinement-only fix.
     mkdir $SNAP_COMMON/data
     chown snap_daemon:root $SNAP_COMMON/data
 
@@ -45,7 +94,10 @@ init_snap_common() {
         exit 1
     fi
 
-    # Remove "group" and "other" permission access from data directory
+    # Remove "group" and "other" permission access from data directory.
+    # This chmod is a known no-op under strict confinement (see note
+    # above) — kept as documentation of intent and because removing it
+    # entirely is an unrelated, unproven behavior change.
     chmod go-rwx $SNAP_COMMON/data
 }
 
@@ -68,28 +120,14 @@ enable_auth_socket() {
 }
 
 init_distribution() {
-    # ProxySQL: writable datadir + seeded config.
-    # IMPORTANT: the config must NOT live directly in $SNAP_DATA/etc: my.cnf's
-    # "!includedir $SNAP_DATA/etc" makes mysqld parse every *.cnf file in that
-    # directory as its own ini-style config, and ProxySQL's brace-block format
-    # has no [group] headers, so mysqld fails with "Found option without
-    # preceding group" and refuses to start. Seed it into its own
-    # subdirectory instead (mirrors the existing haproxy/ isolation below).
-    mkdir $SNAP_COMMON/proxysql
+    # ProxySQL: writable data dir. Its $SNAP_DATA/etc/proxysql and
+    # HAProxy's $SNAP_DATA/etc/haproxy configs are now seeded in
+    # init_snap_data, before that tree's single chown -R (see comment
+    # there). This directory has no analogous root-executed check after
+    # creation, so (unlike $SNAP_COMMON/data above) its mode can safely
+    # fold into mkdir -m, keeping chown as its only post-creation touch.
+    mkdir -m 770 $SNAP_COMMON/proxysql
     chown snap_daemon:root $SNAP_COMMON/proxysql
-    chmod 770 $SNAP_COMMON/proxysql
-    mkdir $SNAP_DATA/etc/proxysql
-    if [ ! -f "$SNAP_DATA/etc/proxysql/proxysql.cnf" ]; then
-        cp $SNAP/etc/proxysql.cnf $SNAP_DATA/etc/proxysql/proxysql.cnf
-    fi
-    chown -R snap_daemon:root "$SNAP_DATA/etc/proxysql"
-
-    # HAProxy: seeded config in the writable data dir
-    mkdir $SNAP_DATA/etc/haproxy
-    if [ ! -f "$SNAP_DATA/etc/haproxy/haproxy.cfg" ]; then
-        cp $SNAP/etc/haproxy.cfg $SNAP_DATA/etc/haproxy/haproxy.cfg
-    fi
-    chown -R snap_daemon:root "$SNAP_DATA/etc/haproxy"
 }
 
 init_snap_data
