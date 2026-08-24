@@ -29,12 +29,15 @@ execute: |
   # round trip, not GTID preservation, so skip it as mysqldump's own
   # warning suggests.
   ${CMD_DUMP} --set-gtid-purged=OFF --databases test_db >test_db.sql
+  echo "--- test_db.sql (diagnostic) ---"
+  cat test_db.sql
+  echo "--- end test_db.sql ---"
 
   echo "Drop test db"
   ${CMD} -e "DROP DATABASE test_db;"
 
   echo "Restore test db"
-  cat test_db.sql | ${CMD}
+  ${CMD} <test_db.sql
 
   ${CMD} -e "SELECT * FROM test_db.test_table WHERE id = 1;"
 

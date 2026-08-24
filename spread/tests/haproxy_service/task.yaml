@@ -34,17 +34,21 @@ execute: |
       server node1 127.0.0.1:3306 check port 9200 inter 2s rise 2 fall 2
   EOF
   snap start "$SNAPNAME.haproxy"
-  # Round-trip through the proxy once the health check marks the node UP
+  # Round-trip through the proxy once the health check marks the node UP.
+  # `timeout` bounds each attempt: if HAProxy accepts the TCP connection
+  # but never forwards data (e.g. the backend health check never
+  # converges), the mysql client has no built-in timeout of its own and
+  # can otherwise block far longer than this loop's nominal budget.
   ok=0
   for _ in $(seq 30); do
-    if "$SNAPNAME.mysql" -h 127.0.0.1 -P 13306 -u hap -pHapTest123! -e "SELECT 1" 2>/dev/null | grep -q 1; then
+    if timeout 3 "$SNAPNAME.mysql" -h 127.0.0.1 -P 13306 -u hap -pHapTest123! -e "SELECT 1" 2>/dev/null | grep -q 1; then
       ok=1; break
     fi
     sleep 2
   done
   [ "$ok" = 1 ]
   # Backend reported UP on the stats socket
-  echo "show stat" | socat stdio unix-connect:/var/snap/$SNAPNAME/current/run/haproxy.sock | grep pxc-back | grep -q UP
+  echo "show stat" | timeout 5 socat stdio unix-connect:/var/snap/$SNAPNAME/current/run/haproxy.sock | grep pxc-back | grep -q UP
   kill "$CLUSTERCHECK_PID" || true
 
 restore: |
