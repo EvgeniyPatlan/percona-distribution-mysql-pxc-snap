@@ -19,7 +19,16 @@ execute: |
   ${CMD} -e "INSERT INTO test_db.test_table (id, name) VALUES (1, 'test_name');"
 
   echo "Dump test db"
-  ${CMD_DUMP} --databases test_db >test_db.sql
+  # --set-gtid-purged=OFF: PXC (Galera) defaults GTID_MODE=ON, so
+  # mysqldump embeds a SET @@GLOBAL.GTID_PURGED=... statement near the top
+  # of the dump whenever the server has GTIDs. Restoring that onto this
+  # same live server (which never purged anything) fails, and the mysql
+  # CLI aborts the whole restore at that first error -- before it ever
+  # reaches the CREATE DATABASE statement -- which is why the later SELECT
+  # sees "Unknown database". This suite only checks a plain dump/restore
+  # round trip, not GTID preservation, so skip it as mysqldump's own
+  # warning suggests.
+  ${CMD_DUMP} --set-gtid-purged=OFF --databases test_db >test_db.sql
 
   echo "Drop test db"
   ${CMD} -e "DROP DATABASE test_db;"

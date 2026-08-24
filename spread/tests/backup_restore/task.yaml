@@ -31,6 +31,12 @@ execute: |
   rm -rf ${DATA}
   mkdir ${DATA}
   chown snap_daemon:root ${DATA}
+  # xtrabackup has no setpriv wrapper (see snap/snapcraft.yaml), so
+  # --copy-back below runs confined as this shell's own caller (root here,
+  # under strict jailmode, without DAC-override). It only matches this
+  # directory's GROUP (root), so group needs its own write bit or the
+  # restore fails with "Can't create/write to file ... (Permission denied)".
+  chmod g+w ${DATA}
 
   echo "Restoring"
   percona-distribution-mysql-pxc.xtrabackup --copy-back --target-dir=${BACKUP} --datadir=${DATA}
