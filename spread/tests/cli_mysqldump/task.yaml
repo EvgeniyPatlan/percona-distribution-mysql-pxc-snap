@@ -11,7 +11,7 @@ execute: |
   echo "Testing mysqldump"
 
   CMD="percona-distribution-mysql-pxc.mysql -u root"
-  CMD_DUMP="percona-distribution-mysql-pxc.mysqldump -u root --single-transaction"
+  CMD_DUMP="percona-distribution-mysql-pxc.mysqldump -u root"
 
   echo "Creating test db"
   ${CMD} -e "CREATE DATABASE test_db;"
@@ -28,8 +28,14 @@ execute: |
   # sees "Unknown database". This suite only checks a plain dump/restore
   # round trip, not GTID preservation, so skip it as mysqldump's own
   # warning suggests.
-  ${CMD_DUMP} --set-gtid-purged=OFF --databases test_db >test_db.sql
-  echo "--- test_db.sql (diagnostic) ---"
+  # sibling suites (percona-distribution-mysql-ps-snap,
+  # percona-server-mysql-snap) route the dump through `| cat` before the
+  # redirect rather than redirecting the confined app's stdout directly;
+  # round 3's diagnostic showed a direct `>test_db.sql` redirect producing
+  # a silently EMPTY file here (no error, exit 0), so match that proven
+  # idiom instead of guessing further.
+  ${CMD_DUMP} --set-gtid-purged=OFF --databases test_db | cat >test_db.sql
+  echo "--- test_db.sql (diagnostic; $(wc -c <test_db.sql) bytes) ---"
   cat test_db.sql
   echo "--- end test_db.sql ---"
 
