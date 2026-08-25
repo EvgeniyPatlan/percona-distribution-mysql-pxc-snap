@@ -29,7 +29,11 @@ execute: |
   # --single-transaction avoids taking a global lock at dump time;
   # --set-gtid-purged=OFF avoids embedding a GTID_PURGED statement (this
   # Galera build defaults GTID_MODE=ON).
-  ${CMD_DUMP} --databases test_db >test_db.sql
+  # Piping through `cat` before the redirect matters: under strict/jailmode
+  # confinement, redirecting a confined snap app's stdout DIRECTLY to a
+  # file yields a silent 0-byte file with exit 0 (empirically confirmed);
+  # `| cat >file` is the working form.
+  ${CMD_DUMP} --databases test_db | cat >test_db.sql
 
   echo "Verify dump content"
   grep -q "CREATE TABLE" test_db.sql
