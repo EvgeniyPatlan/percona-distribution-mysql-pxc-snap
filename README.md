@@ -335,6 +335,66 @@ CRAFT_ARTIFACT=$(pwd)/percona-distribution-mysql-pxc_<version>_amd64.snap spread
 (`spread` from `go install github.com/canonical/spread/cmd/spread@latest`;
 needs the `lxd` snap.)
 
+## Updating to a new Percona release
+
+`scripts/bump-version.sh` checks every exact-pinned package in
+`snap/snapcraft.yaml` against the apt indexes declared under
+`package-repositories`, and bumps any pin (and the top-level `version:`
+field, derived from the `percona-xtradb-cluster-server` pin) that is out of
+date.
+
+Of the packages listed under `stage-packages`, 11 are exact-version-pinned
+(including the epoched `proxysql2`, `percona-haproxy`, and
+`percona-replication-manager` pins) and are what the script tracks; the
+remaining entries (`util-linux`, `perl`, `libdbi-perl`,
+`libterm-readkey-perl`, `libio-socket-ssl-perl`) have no `=version` and are
+left alone. `package-repositories` also declares the
+`repo.percona.com/telemetry/apt` source, which none of the 11 tracked pins
+come from — the script still fetches its index, but since no pin matches a
+package in it, that fetch is a silent no-op by design, not an error.
+
+### Automated
+
+The `Update check` workflow (`.github/workflows/update-check.yaml`) runs
+weekly and, for each `*/edge` branch, runs the same script and opens a pull
+request per branch that has an available update. Today that means just
+`8.4/edge`, but the workflow is written to loop over every `*/edge` branch,
+so it needs no changes when a second track is added. The PR:
+
+- touches only `snap/snapcraft.yaml`, with the pin diff as the commit;
+- contains the script's summary table (old/new version per package) in its
+  description;
+- is verified the same way any other PR is: CI (`Tests`) builds the snap for
+  `amd64` and `arm64` and runs the full spread suite against it. Merging the
+  PR into its track branch produces the downloadable `snap-packages`
+  artifact described above.
+
+To trigger an immediate check instead of waiting for the weekly run, start
+the `Update check` workflow manually from the Actions tab (`workflow_dispatch`,
+optionally scoped to one branch via the `branch` input).
+
+If a bump PR is closed without merging, its `bump/<track>-<version>` branch
+is left behind and that exact version is skipped on every future run until
+the branch is deleted (or a newer version ships) — delete the branch if you
+want the check retried for that version.
+
+### Manual
+
+```
+./scripts/bump-version.sh
+git diff
+```
+
+Review the diff, then commit and push as usual.
+
+### Scope
+
+The script only updates pins within the current track (`8.4`). A new Percona
+XtraDB Cluster major version means a new track/branch and, per the Percona
+publishing model for PXC, a new apt repository path
+(`repo.percona.com/pdpxc-<NN>-lts/apt`) — that's a manual, one-time setup,
+not something this script does.
+
 ## License
 
 The snap packaging is Apache-2.0. Upstream component licenses (Percona
