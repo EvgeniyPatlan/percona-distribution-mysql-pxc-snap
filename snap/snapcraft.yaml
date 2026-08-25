@@ -18,6 +18,7 @@ description: |
   Hot backups work out of the box against this snap's own server:
     sudo percona-distribution-mysql-pxc.xtrabackup --backup -u root \
       -S /var/snap/percona-distribution-mysql-pxc/current/run/mysqld.sock \
+      --datadir=/var/snap/percona-distribution-mysql-pxc/common/data \
       --target-dir=/var/snap/percona-distribution-mysql-pxc/common/backup
 
   Percona Toolkit tools are exposed as individual commands, e.g.:
