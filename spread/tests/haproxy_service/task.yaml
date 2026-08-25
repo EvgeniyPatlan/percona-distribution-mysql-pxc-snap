@@ -12,30 +12,30 @@ prepare: |
 execute: |
   SNAPNAME=percona-distribution-mysql-pxc
   # TCP user for the proxied connection (auth_socket only works locally).
-  "$SNAPNAME.mysql" -u root -e "CREATE USER 'hap'@'127.0.0.1' IDENTIFIED BY 'HapTest123!'; GRANT SELECT ON *.* TO 'hap'@'127.0.0.1';"
-  # Diagnostic: time a direct clustercheck invocation. snap-confine's
-  # cold-exec latency per invocation can be significant, and each HAProxy
-  # health probe forks+execs this snap app fresh -- capture the timing in
-  # the job log to confirm/refute that theory. Bounded so a genuinely
-  # broken clustercheck (bad creds/cnf under confinement) can't hang here.
-  timeout 30 bash -c "time $SNAPNAME.clustercheck" </dev/null || echo "clustercheck diagnostic exited rc=$?"
-  # clustercheck behind an HTTP listener on :9200. Bounded lifetime so a
-  # stuck listener can never outlive the test (restore also pkills it).
-  timeout 300 socat TCP-LISTEN:9200,fork,reuseaddr EXEC:"$SNAPNAME.clustercheck" &
-  CLUSTERCHECK_PID=$!
-  # Live HAProxy config: frontend :13306 -> local mysqld, health via :9200.
-  # The probe cadence (inter/downinter/rise/fall) and "timeout check" are
-  # deliberately relaxed beyond HAProxy's tight defaults: each health
-  # check forks+execs the clustercheck snap app via socat, and
-  # snap-confine's cold-exec latency can exceed a 2s probe interval,
-  # causing HAProxy to reset the check connection before clustercheck
-  # replies -- the backend then never converges to UP.
+  # caching_sha2_password is spelled out explicitly -- it's already the
+  # 8.4 default, but this matches the family's proxysql_service precedent
+  # of never relying on the implicit default for a TCP-auth account.
+  "$SNAPNAME.mysql" -u root -e "CREATE USER 'hap'@'127.0.0.1' IDENTIFIED WITH caching_sha2_password BY 'HapTest123!'; GRANT SELECT ON *.* TO 'hap'@'127.0.0.1';"
+  # clustercheck itself replies with a plain HTTP status line ("HTTP/1.1
+  # 200 OK ... Node is synced."). Assert that directly -- this is now the
+  # suite's only clustercheck coverage, since the HAProxy backend below
+  # health-checks mysqld itself rather than going through clustercheck
+  # (see that comment for why).
+  timeout 30 "$SNAPNAME.clustercheck" | grep -q "200 OK"
+  # Logging is deliberately enabled (the shipped default haproxy.cfg has
+  # it; this suite's override previously dropped it, leaving zero
+  # visibility into health-check/connection handling on failure). "log
+  # stderr" is captured by snapd/journald, so `snap logs SNAPNAME.haproxy`
+  # shows tcplog connection lines plus health-check state transitions.
   cat > /var/snap/$SNAPNAME/current/etc/haproxy/haproxy.cfg <<'EOF'
   global
       maxconn 256
+      log stderr format raw local0 info
       stats socket /var/snap/percona-distribution-mysql-pxc/current/run/haproxy.sock mode 660 level admin
   defaults
       mode tcp
+      log global
+      option tcplog
       timeout connect 10s
       timeout client 1m
       timeout server 1m
@@ -44,8 +44,23 @@ execute: |
       bind 127.0.0.1:13306
       default_backend pxc-back
   backend pxc-back
-      option httpchk GET /
-      server node1 127.0.0.1:3306 check port 9200 inter 5s downinter 5s rise 2 fall 3
+      # Plain L4 connect check against mysqld itself, NOT an httpchk
+      # fronted by socat+clustercheck on :9200. That combination was
+      # proven live in CI to lose a TCP close race: HAProxy sends
+      # "GET / HTTP/1.0", clustercheck (a script, not a real HTTP
+      # server) never reads stdin, socat's EXEC child writes its
+      # response and exits, and closing a socket with the request bytes
+      # still unread in the kernel receive buffer sends RST instead of
+      # FIN -- so HAProxy race-dependently sees ECONNRESET before it
+      # can consume the already-buffered 200 response. Confirmed by:
+      # resets recurring at the probe cadence, clustercheck answering
+      # perfectly (200 OK, 0.243s) when invoked directly, and identical
+      # suite code passing on arm64 (won the race) while amd64 never
+      # converged. An L4 connect check has no such race -- it only
+      # needs the TCP handshake to succeed -- and clustercheck's own
+      # correctness is still verified directly above.
+      option log-health-checks
+      server node1 127.0.0.1:3306 check inter 5s downinter 5s rise 2 fall 3
   EOF
   timeout 60 snap start "$SNAPNAME.haproxy"
   # Round-trip through the proxy once the health check marks the node UP.
@@ -55,18 +70,39 @@ execute: |
   # can otherwise block far longer than this loop's nominal budget. The
   # iteration budget is widened to tolerate the relaxed 5s probe cadence
   # above (fall/rise convergence needs multiple 5s intervals).
+  # --get-server-public-key: caching_sha2_password's first ("full") auth
+  # for an account needs either an already-negotiated TLS channel or an
+  # RSA public-key exchange to send the password; mysql's default
+  # ssl-mode=PREFERRED silently falls back to plaintext if TLS can't be
+  # negotiated for any reason, which would otherwise strand this client
+  # with no way to authenticate. Harmless no-op if TLS *is* negotiated.
   ok=0
   for _ in $(seq 60); do
-    if timeout 5 "$SNAPNAME.mysql" -h 127.0.0.1 -P 13306 -u hap -pHapTest123! -e "SELECT 1" 2>/dev/null | grep -q 1; then
+    if timeout 5 "$SNAPNAME.mysql" -h 127.0.0.1 -P 13306 -u hap -pHapTest123! --get-server-public-key -e "SELECT 1" 2>/dev/null | grep -q 1; then
       ok=1; break
     fi
     sleep 2
   done
+  # Permanent forensics: only fires on failure, never on the happy path.
+  # Captures the three things needed to distinguish "backend never came
+  # UP" from "backend UP but client couldn't authenticate/connect" from
+  # "nothing is listening where we think it is" -- the mysql loop above
+  # hides its real error behind 2>/dev/null, so this re-runs one attempt
+  # unmasked.
+  if [ "$ok" != 1 ]; then
+    echo "=== FORENSICS: mysql-through-proxy loop exhausted ==="
+    echo "--- haproxy stats socket: backend state ---"
+    echo "show stat" | timeout 10 socat stdio unix-connect:/var/snap/$SNAPNAME/current/run/haproxy.sock || echo "stats socket query rc=$?"
+    echo "--- listening sockets (3306/13306/9200) ---"
+    ss -ltn | grep -E '3306|13306|9200' || true
+    echo "--- one unmasked mysql attempt (stderr visible) ---"
+    timeout 5 "$SNAPNAME.mysql" -h 127.0.0.1 -P 13306 -u hap -pHapTest123! --get-server-public-key -e "SELECT 1" || echo "mysql rc=$?"
+    echo "--- haproxy log tail ---"
+    snap logs "$SNAPNAME.haproxy" -n 20 || true
+  fi
   [ "$ok" = 1 ]
   # Backend reported UP on the stats socket
   echo "show stat" | timeout 5 socat stdio unix-connect:/var/snap/$SNAPNAME/current/run/haproxy.sock | grep pxc-back | grep -q UP
-  kill "$CLUSTERCHECK_PID" || true
 
 restore: |
-  pkill -f "TCP-LISTEN:9200" || true
   timeout 120 snap remove percona-distribution-mysql-pxc --purge --terminate || true
