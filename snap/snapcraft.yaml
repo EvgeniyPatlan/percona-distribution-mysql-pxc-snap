@@ -1,6 +1,6 @@
 name: percona-distribution-mysql-pxc
 base: core26
-version: '8.4.10-10'
+version: '8.4.11-12'
 summary: Percona Distribution for MySQL (PXC-based) in a snap.
 description: |
   Percona Distribution for MySQL (PXC variant) combines Percona XtraDB
@@ -362,13 +362,13 @@ parts:
   packages-deb:
     plugin: nil
     stage-packages:
-      - percona-xtradb-cluster-server=1:8.4.10-10-1.resolute
-      - percona-xtradb-cluster-client=1:8.4.10-10-1.resolute
-      - percona-xtradb-cluster-common=1:8.4.10-10-1.resolute
-      - percona-xtradb-cluster-garbd=1:8.4.10-10-1.resolute
-      - percona-xtrabackup-84=8.4.0-6-1.resolute
-      - proxysql2=2:2.7.3-1.5.resolute
-      - percona-haproxy=2:2.8.26-1.resolute
+      - percona-xtradb-cluster-server=1:8.4.11-12-1.resolute
+      - percona-xtradb-cluster-client=1:8.4.11-12-1.resolute
+      - percona-xtradb-cluster-common=1:8.4.11-12-1.resolute
+      - percona-xtradb-cluster-garbd=1:8.4.11-12-1.resolute
+      - percona-xtrabackup-84=8.4.0-7-1.resolute
+      - proxysql2=2:2.7.3-1.6.resolute
+      - percona-haproxy=2:2.8.29-1.resolute
       - percona-replication-manager=2:1.0-1.resolute
       - percona-toolkit=3.7.1-4.resolute
       - libdbd-mysql-perl=1:5.013-4.resolute
